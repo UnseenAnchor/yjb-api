@@ -8,3 +8,5 @@ __pycache__/
 _yjb_helper.tmp
 _device_id.tmp
 *.tmp
+加仓记录_*
+*_导出.xlsx

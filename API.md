@@ -136,8 +136,22 @@ Request-Sign = md5(sign_str)
 | POST | `/market/v1/fund/batch` | 批量基金信息 | ✅ 可用 |
 | GET | `/position/v1/static/fund-accounts/{id}/funds` | 基金持仓 | ✅ 可用 |
 | GET | `/position/v1/option/all` | 全部基金列表（含近一年收益/排名/行业/规模） | ✅ 可用 |
+| GET | `/action_record?account_id=&fund_id=&state=&type=&page=&per_page=` | **交易/加仓记录** | ✅ 可用 |
 | GET | `/position/v1/chat/get-ini?fund_id=` | AI 对话初始化 | ✅ 可用（返回空数组） |
 | GET | `/users/v1/thread/config/option-talent-get` | 持仓页配置开关 | ✅ 可用 |
+
+**`/action_record` 实测说明**（App token 直接可用，无需 wxuk；字段从真实响应提取）：
+
+```json
+{ "id": 112577303, "fund_id": "24058", "account_id": 29074061, "type": 2,
+  "money": "1655.28", "operation_time": "2026-08-25 14:59:59",
+  "state": 2, "confirm_day": "2026-08-26", "fund_name": "华夏港股通央企红利ETF联接A" }
+```
+
+- `type`：1=加仓 2=减仓 3=加仓(份额) 4=减仓(份额)；基金转换时 `fund_id` 为 "旧ID,新ID"
+- `state`：1=待确认 2=已确认 3/4=已撤销
+- `money`：字符串，金额或份额（视 type 而定）
+- 遍历全部记录需按基金逐个翻页（`per_page` 最大约 100），参考 `refresh_yjb.py`
 | POST | `/market/v1/fund/relation-and-rank` | 关联/排名 | ✅ 可用 |
 | GET | `/position/v1/static/fund/hold-stock` | 重仓股 | ✅ 可用 |
 | GET | `/market/v1/fund/fund-stock-industry` | 基金行业持仓 | ✅ 可用 |
@@ -217,7 +231,7 @@ base_url = "https://wx.yangjibao.com/wxapi"    # 签名用完整域名+路径，
 | 方法 | 路径 | 说明 | 状态 |
 |---|---|---|---|
 | GET | `/day_info` | 交易日历 | ✅ 免登录已验证 |
-| GET | `/action_record?account_id=&fund_id=&state=&type=&page=&per_page=` | **交易/加仓记录**（state: 0全部/1部分；type: 操作类型） | ⚠️ 需 wxuk（签名已验证，等 wxuk） |
+| GET | `/action_record?...` | **交易/加仓记录** | ✅ 同名接口在 app-api 上用 App token 已验证可用；wxapi 版需 wxuk |
 | GET | `/fund_profit?fund_id=` | 单基金收益明细 | ⚠️ 需 wxuk |
 | GET | `/guiding_record` | 功能引导记录 | 需 wxuk |
 | POST | `/user_statistics` | 用户行为统计 | 需 wxuk |
@@ -254,3 +268,15 @@ wxuk 获取方式：① App 内打开 H5 页面（如买卖列表 `wx.yangjibao.
 | `--wx-day-info` | wxapi `GET /day_info` | H5 交易日历（免登录） |
 | `--wxuk TOKEN --wx-action-record ACCOUNT_ID` | wxapi `GET /action_record` | H5 交易/加仓记录 |
 | `--wxuk TOKEN --wx-fund-profit FUND_ID` | wxapi `GET /fund_profit` | H5 单基金收益 |
+
+## 7. 加仓记录导出工具
+
+`refresh_yjb.py`：一键拉取全部账户、全部基金的加仓/减仓记录并导出 Excel + JSON。
+
+```bash
+python refresh_yjb.py send  <手机号>   # 发送验证码
+python refresh_yjb.py pull  <验证码>   # 登录 + 拉取 + 导出 加仓记录_导出.xlsx
+python refresh_yjb.py export           # 用现有 token 直接导出（未过期时）
+```
+
+注意：`加仓记录_raw.json` / `加仓记录_导出.xlsx` 是个人财务数据，已被 .gitignore 排除，勿提交。
