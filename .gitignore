@@ -3,3 +3,8 @@
 Raw_*
 *.xpi
 .DS_Store__pycache__/
+
+__pycache__/
+_yjb_helper.tmp
+_device_id.tmp
+*.tmp
