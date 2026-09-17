@@ -1041,6 +1041,89 @@ def parse_json_arg(raw: str) -> Dict[str, Any]:
 
 
 # 命令行入口
+# ============ H5 wxapi 通道（微信H5，wxuk 会话） ============
+WX_API_BASE = "https://wx.yangjibao.com/wxapi"
+WX_SECRET = "FI1IUyhfbwOXiAkv1ZUR5WwmlIEsztLn"
+WX_UA = ('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) '
+         'AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 MicroMessenger/8.0.49')
+
+
+def wx_get(path: str, wxuk: str = "", **params) -> Dict[str, Any]:
+    """H5 wxapi GET 请求
+
+    签名：md5(WX_API_BASE + path + wxuk + WX_SECRET + timestamp)
+    头：Authorization / Request-Time / Version / Request-Sign，UA 必须是移动端（否则 401 非法请求源）
+    wxuk 是微信 OAuth 换发的 H5 会话 token，与 App token 不通用；
+    获取方式：App 内打开 H5 页面时 URL 会带 ?wxuk=...，或抓包 Authorization 头。
+    """
+    ts = int(time.time())
+    sign = hashlib.md5(f"{WX_API_BASE}{path}{wxuk}{WX_SECRET}{ts}".encode()).hexdigest()
+    headers = {
+        'Authorization': wxuk,
+        'Request-Time': str(ts),
+        'Version': 'yjb_wxfwh-2.0.3',
+        'Content-Type': 'application/json',
+        'Request-Sign': sign,
+        'User-Agent': WX_UA,
+        'Accept': 'application/json, text/plain, */*',
+    }
+    resp = requests.get(WX_API_BASE + path, params=params, headers=headers, timeout=30)
+    try:
+        data = resp.json()
+    except Exception:
+        raise RuntimeError(f"HTTP {resp.status_code}: {resp.text[:200]}")
+    if data.get('code') != 200:
+        raise RuntimeError(f"code={data.get('code')} message={data.get('message')}")
+    return data.get('data')
+
+
+def show_new_option_all(client: YJBClient):
+    """新接口：全部基金持仓/自选列表（含近一年收益、排名、行业、规模等）"""
+    print("\n📋 新接口全部基金列表（option/all）")
+    print("-" * 60)
+    data = client.get('/position/v1/option/all')
+    print(json.dumps(data, ensure_ascii=False, indent=2)[:6000])
+
+
+def show_new_hot_funds(client: YJBClient):
+    """新接口：热门基金排行"""
+    print("\n🔥 新接口热门基金排行")
+    print("-" * 60)
+    data = client.get('/market/v1/market-ranking/hot-funds-ranking')
+    print(json.dumps(data, ensure_ascii=False, indent=2)[:3000])
+
+
+def show_wx_day_info(wxuk: str):
+    """H5：交易日历（免登录，已验证）"""
+    print("\n📅 H5 交易日历")
+    print("-" * 60)
+    print(json.dumps(wx_get('/day_info', wxuk), ensure_ascii=False, indent=2))
+
+
+def show_wx_action_record(wxuk: str, account_id: int, fund_id: Optional[int] = None,
+                          state: int = 0, record_type: int = 0, page: int = 1, per_page: int = 20):
+    """H5：交易/加仓记录（需要 wxuk 会话）
+
+    state: 0=全部记录 1=部分；record_type: 操作类型筛选（0=全部）
+    响应字段：type(操作)、state、money、date 等
+    """
+    print("\n🧾 H5 交易记录（action_record）")
+    print("-" * 60)
+    kw = {'account_id': account_id, 'state': state, 'type': record_type,
+          'page': page, 'per_page': per_page}
+    if fund_id:
+        kw['fund_id'] = fund_id
+    data = wx_get('/action_record', wxuk, **kw)
+    print(json.dumps(data, ensure_ascii=False, indent=2)[:6000])
+
+
+def show_wx_fund_profit(wxuk: str, fund_id: int):
+    """H5：单基金收益明细（需要 wxuk 会话）"""
+    print(f"\n💰 H5 单基金收益 (fund_id={fund_id})")
+    print("-" * 60)
+    print(json.dumps(wx_get('/fund_profit', wxuk, fund_id=fund_id), ensure_ascii=False, indent=2)[:4000])
+
+
 def main():
     """主函数"""
     parser = argparse.ArgumentParser(description='养基宝命令行工具')
@@ -1083,6 +1166,15 @@ def main():
     parser.add_argument('--new-stock-income', type=str, nargs='?', const='', metavar='ACCOUNT_ID', help='新接口：股票收益曲线')
     parser.add_argument('--new-stock-optional', action='store_true', help='新接口：股票自选')
     parser.add_argument('--new-fund-distribution', action='store_true', help='新接口：基金涨跌分布')
+    parser.add_argument('--new-option-all', action='store_true', help='新接口：全部基金列表（含收益/排名/行业）')
+    parser.add_argument('--new-hot-funds', action='store_true', help='新接口：热门基金排行')
+
+    # H5 wxapi 通道命令（需要 --wxuk）
+    parser.add_argument('--wxuk', type=str, metavar='TOKEN', help='H5 wxapi 会话 token（App打开H5页面URL中的 wxuk 参数，或抓包 Authorization 头）')
+    parser.add_argument('--wx-day-info', action='store_true', help='H5：交易日历（免登录）')
+    parser.add_argument('--wx-action-record', type=int, metavar='ACCOUNT_ID', help='H5：交易/加仓记录（需 --wxuk）')
+    parser.add_argument('--wx-fund-profit', type=int, metavar='FUND_ID', help='H5：单基金收益（需 --wxuk）')
+    parser.add_argument('--wx-fund-id', type=int, metavar='FUND_ID', help='配合 --wx-action-record 筛选单只基金')
 
     parser.add_argument('--debug', action='store_true', help='显示详细调试信息')
 
@@ -1100,6 +1192,28 @@ def main():
     token = load_token()
     if not token:
         print("未登录，请先运行：python3 yjb_tool.py --login 或 python3 yjb_tool.py --sms-login 手机号")
+        sys.exit(1)
+
+    # H5 wxapi 命令（不依赖 App token）
+    wxuk = args.wxuk or os.environ.get('YJB_WXUK', '')
+    try:
+        if args.wx_day_info:
+            show_wx_day_info(wxuk)
+            return
+        if args.wx_action_record is not None:
+            if not wxuk:
+                print('需要 --wxuk 或环境变量 YJB_WXUK（App打开H5交易记录页时URL中的 wxuk 参数）')
+                sys.exit(1)
+            show_wx_action_record(wxuk, args.wx_action_record, fund_id=args.wx_fund_id)
+            return
+        if args.wx_fund_profit is not None:
+            if not wxuk:
+                print('需要 --wxuk 或环境变量 YJB_WXUK')
+                sys.exit(1)
+            show_wx_fund_profit(wxuk, args.wx_fund_profit)
+            return
+    except Exception as e:
+        print(f"H5 请求失败: {e}")
         sys.exit(1)
 
     # 创建客户端
@@ -1175,6 +1289,10 @@ def main():
             show_new_stock_optional(client)
         elif args.new_fund_distribution:
             show_new_fund_distribution(client)
+        elif args.new_option_all:
+            show_new_option_all(client)
+        elif args.new_hot_funds:
+            show_new_hot_funds(client)
         else:
             # 默认显示仪表盘（老接口）
             show_dashboard(client)

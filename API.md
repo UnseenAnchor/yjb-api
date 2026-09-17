@@ -119,6 +119,7 @@ Request-Sign = md5(sign_str)
 |---|---|---|---|
 | GET | `/market/v1/quote/index-data` | 指数行情 | ✅ 可用 |
 | GET | `/market/v1/market-ranking/list` | 市场排行 | ✅ 可用 |
+| GET | `/market/v1/market-ranking/hot-funds-ranking` | 热门基金榜 | ✅ 可用 |
 | GET | `/market/v1/market-ranking/etf-ranking` | ETF 排行 | ✅ 可用 |
 | GET | `/market/v1/market-ranking/theme-ranking` | 板块排行 | ✅ 可用 |
 | GET | `/fund_source_list` | 基金来源列表 | ✅ 可用 |
@@ -134,6 +135,9 @@ Request-Sign = md5(sign_str)
 | GET | `/users/v1/fund/detail` | 基金用户详情 | ✅ 可用 |
 | POST | `/market/v1/fund/batch` | 批量基金信息 | ✅ 可用 |
 | GET | `/position/v1/static/fund-accounts/{id}/funds` | 基金持仓 | ✅ 可用 |
+| GET | `/position/v1/option/all` | 全部基金列表（含近一年收益/排名/行业/规模） | ✅ 可用 |
+| GET | `/position/v1/chat/get-ini?fund_id=` | AI 对话初始化 | ✅ 可用（返回空数组） |
+| GET | `/users/v1/thread/config/option-talent-get` | 持仓页配置开关 | ✅ 可用 |
 | POST | `/market/v1/fund/relation-and-rank` | 关联/排名 | ✅ 可用 |
 | GET | `/position/v1/static/fund/hold-stock` | 重仓股 | ✅ 可用 |
 | GET | `/market/v1/fund/fund-stock-industry` | 基金行业持仓 | ✅ 可用 |
@@ -181,6 +185,46 @@ App 包里还能提取到大量接口，例如：
 - 用户/客服：`/users/v1/customer-service-chats/identity`、`/users/v1/message/read`
 - 股票：`/stock/v1/index-search/search`、`/stock/v1/relation-index/query-batch`、`/stock/v1/relation-index/default-list`
 
+### 5.7 H5 通道（wxapi，逆向自 wx.yangjibao.com H5 包 v2.0.3）
+
+> 与 App 的 `app-api` 不同，这是微信 H5（公众号/小程序/App 内嵌页）使用的独立通道，
+> 会话 token（`wxuk`）由微信 OAuth 换发或由 App 打开 H5 时通过 `?wxuk=` 传入，**与 App token 不通用**。
+
+**Base URL**：`https://wx.yangjibao.com/wxapi`
+
+**签名算法**（与 App 新接口同构，secret 不同）：
+
+```
+Request-Sign = md5(base_url + path + wxuk + secret + timestamp)
+secret = "FI1IUyhfbwOXiAkv1ZUR5WwmlIEsztLn"   # 从 H5 app.js 提取
+base_url = "https://wx.yangjibao.com/wxapi"    # 签名用完整域名+路径，不带 query
+```
+
+**请求头**：
+
+| 头 | 值 | 说明 |
+|---|---|---|
+| `Authorization` | wxuk | 免登录接口留空即可 |
+| `Request-Time` | unix 秒 | |
+| `Version` | `yjb_wxfwh-2.0.3` | |
+| `Request-Sign` | 见上 | |
+| `User-Agent` | 必须移动端 UA | 否则 `401 非法请求源` |
+
+**实测结论**：
+- `401 非法请求源` = UA 不是移动端；`1401 身份信息失效 Err:01` = wxuk 无效/过期（App token、游客 `tourists_visit` 均会被拒）
+- 响应包络同 App：`{code:200, message, data}`
+
+| 方法 | 路径 | 说明 | 状态 |
+|---|---|---|---|
+| GET | `/day_info` | 交易日历 | ✅ 免登录已验证 |
+| GET | `/action_record?account_id=&fund_id=&state=&type=&page=&per_page=` | **交易/加仓记录**（state: 0全部/1部分；type: 操作类型） | ⚠️ 需 wxuk（签名已验证，等 wxuk） |
+| GET | `/fund_profit?fund_id=` | 单基金收益明细 | ⚠️ 需 wxuk |
+| GET | `/guiding_record` | 功能引导记录 | 需 wxuk |
+| POST | `/user_statistics` | 用户行为统计 | 需 wxuk |
+| GET | `/oauth?from_url=` | 微信 OAuth 跳转（wxuk 来源） | 浏览器内流程 |
+
+wxuk 获取方式：① App 内打开 H5 页面（如买卖列表 `wx.yangjibao.com/app/setting/buySellList`）时分享/复制 URL 中的 `wxuk=` 参数；② 手机抓包看 `Authorization` 头。
+
 ## 6. CLI 对应关系
 
 | CLI | 接口 | 说明 |
@@ -205,3 +249,8 @@ App 包里还能提取到大量接口，例如：
 | `--api new --new-stock-income [ID]` | `GET /stock_income_line_data` | 股票收益曲线 |
 | `--api new --new-stock-optional` | `GET /stock_optional` | 股票自选 |
 | `--api new --new-fund-distribution` | `GET /fund_up_down_distribution` | 基金涨跌分布 |
+| `--api new --new-option-all` | `GET /position/v1/option/all` | 全部基金列表 |
+| `--api new --new-hot-funds` | `GET /market/v1/market-ranking/hot-funds-ranking` | 热门基金榜 |
+| `--wx-day-info` | wxapi `GET /day_info` | H5 交易日历（免登录） |
+| `--wxuk TOKEN --wx-action-record ACCOUNT_ID` | wxapi `GET /action_record` | H5 交易/加仓记录 |
+| `--wxuk TOKEN --wx-fund-profit FUND_ID` | wxapi `GET /fund_profit` | H5 单基金收益 |

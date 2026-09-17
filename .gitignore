@@ -2,4 +2,4 @@
 *.ipa
 Raw_*
 *.xpi
-.DS_Store
+.DS_Store__pycache__/
